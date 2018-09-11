@@ -693,8 +693,8 @@ inline bool does_error_affect_main_socket(int error_code) {
 //      retries and backup requests. This method simply cares about the error of
 //      this very Call (specified by |error_code|) rather than the error of the
 //      entire RPC (specified by c->FailedInline()).
-void Controller::Call::OnComplete(Controller* c, int error_code/*note*/,
-                                  bool responded, bool release_socket) {
+void Controller::Call::OnCompleteAndKeepSocket(
+        Controller* c, int error_code/*note*/, bool responded) {
     switch (c->connection_type()) {
     case CONNECTION_TYPE_UNKNOWN:
         break;
@@ -763,10 +763,6 @@ void Controller::Call::OnComplete(Controller* c, int error_code/*note*/,
         c->stream_creator()->CleanupSocketForStream(
             sending_sock.get(), c, error_code);
     }
-    if (release_socket) {
-        // Release the `Socket' we used to send/receive data
-        sending_sock.reset(NULL);
-    }
     
     if (need_feedback) {
         const LoadBalancer::CallInfo info =
@@ -775,9 +771,11 @@ void Controller::Call::OnComplete(Controller* c, int error_code/*note*/,
     }
 }
 
-void Controller::Call::OnCompleteAndKeepSocket(
+void Controller::Call::OnComplete(
         Controller* c, int error_code, bool responded) {
-    OnComplete(c, error_code, responded, false);
+    OnCompleteAndKeepSocket(c, error_code, responded);
+    // Release the `Socket' we used to send/receive data
+    sending_sock.reset(NULL);
 }
 
 void Controller::EndRPC(const CompletionInfo& info) {
@@ -834,13 +832,14 @@ void Controller::EndRPC(const CompletionInfo& info) {
                 CHECK(false) << "A previous non-backed-up call responded";
                 _unfinished_call->OnCompleteAndKeepSocket(this, ECANCELED, false);
             }
-            delete _unfinished_call;
-            _unfinished_call = NULL;
             if (_stream_creator) {
                 _stream_creator->OnStreamCreationDone(
                     _unfinished_call->sending_sock, this);
             }
             _unfinished_call->sending_sock.reset(NULL);
+
+            delete _unfinished_call;
+            _unfinished_call = NULL;
         } else {
             CHECK(false) << "A previous non-backed-up call responded";
         }
