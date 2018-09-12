@@ -571,7 +571,6 @@ private:
 
         int nretry;                // sent in nretry-th retry.
         bool need_feedback;        // The LB needs feedback.
-        bool touched_by_stream_creator;
         SocketId peer_id;          // main server id
         int64_t begin_time_us;     // sent real time.
         // The actual `Socket' for sending RPC. It's socket id will be

@@ -258,7 +258,6 @@ void Controller::InternalReset(bool in_constructor) {
 Controller::Call::Call(Controller::Call* rhs)
     : nretry(rhs->nretry)
     , need_feedback(rhs->need_feedback)
-    , touched_by_stream_creator(rhs->touched_by_stream_creator)
     , peer_id(rhs->peer_id)
     , begin_time_us(rhs->begin_time_us)
     , sending_sock(rhs->sending_sock.release()) {
@@ -266,7 +265,6 @@ Controller::Call::Call(Controller::Call* rhs)
     // setting all the fields to next call and _current_call.OnComplete
     // will behave incorrectly.
     rhs->need_feedback = false;
-    rhs->touched_by_stream_creator = false;
     rhs->peer_id = (SocketId)-1;
 }
 
@@ -277,7 +275,6 @@ Controller::Call::~Call() {
 void Controller::Call::Reset() {
     nretry = 0;
     need_feedback = false;
-    touched_by_stream_creator = false;
     peer_id = (SocketId)-1;
     begin_time_us = 0;
     sending_sock.reset(NULL);
@@ -732,7 +729,7 @@ void Controller::Call::OnComplete(
     case CONNECTION_TYPE_SHORT:
         if (sending_sock != NULL) {
             // Check the comment in CONNECTION_TYPE_POOLED branch.
-            if (!sending_sock->is_read_progressive()) {
+            if (!sending_sock->is_read_progressive() && c->_stream_creator == NULL) {
                 sending_sock->SetFailed();
             } else {
                 sending_sock->OnProgressiveReadCompleted();
@@ -764,9 +761,7 @@ void Controller::Call::OnComplete(
         c->_lb->Feedback(info);
     }
 
-    if (touched_by_stream_creator) {
-        touched_by_stream_creator = false;
-        CHECK(c->stream_creator());
+    if (c->stream_creator()) {
         c->stream_creator()->OnDestroyingStream(
             sending_sock, c, error_code, end_of_rpc);
     }
@@ -994,7 +989,6 @@ void Controller::IssueRPC(int64_t start_realtime_us) {
         _remote_side = tmp_sock->remote_side();
     }
     if (_stream_creator) {
-        _current_call.touched_by_stream_creator = true;
         _stream_creator->OnCreatingStream(&tmp_sock, this);
         if (FailedInline()) {
             return HandleSendFailed();
